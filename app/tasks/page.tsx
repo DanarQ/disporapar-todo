@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Filter, Search } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -14,23 +14,24 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { TodoCard } from "@/components/todo-card";
-import { useTodo, Todo } from "@/contexts/todo-context";
+import { useTodo } from "@/contexts/todo-context";
+import { Todo } from "@/lib/types";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Loader } from "@/components/ui/loader";
 
 export default function TasksPage() {
   const router = useRouter();
-  const { todos, deleteTodo, toggleComplete } = useTodo();
+  const { todos = [], deleteTodo, toggleComplete } = useTodo();
   const [filteredTodos, setFilteredTodos] = useState<Todo[]>([]);
   const [filterCategory, setFilterCategory] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    filterTodos();
-  }, [todos, filterCategory, filterStatus, searchQuery]);
-
-  const filterTodos = () => {
-    let result = [...todos];
+  // Memoized filter function for better performance
+  const filterTodos = useCallback(() => {
+    // Start with all todos, ensuring it's an array
+    let result = Array.isArray(todos) ? [...todos] : [];
 
     // Apply category filter
     if (filterCategory !== "all") {
@@ -54,29 +55,73 @@ export default function TasksPage() {
       );
     }
 
-    setFilteredTodos(result);
-  };
+    return result;
+  }, [todos, filterCategory, filterStatus, searchQuery]);
 
-  const handleNewTask = () => {
+  // Update filtered todos when dependencies change
+  useEffect(() => {
+    setFilteredTodos(filterTodos());
+  }, [filterTodos]);
+
+  // Set loading to false after data is loaded
+  useEffect(() => {
+    if (Array.isArray(todos) && (todos.length > 0 || isLoading)) {
+      setIsLoading(false);
+    }
+  }, [todos, isLoading]);
+
+  // Memoized handlers
+  const handleNewTask = useCallback(() => {
     router.push("/tasks/new");
-  };
+  }, [router]);
 
-  const handleEditTask = (id: string) => {
-    router.push(`/tasks/edit/${id}`);
-  };
+  const handleEditTask = useCallback(
+    (id: string) => {
+      router.push(`/tasks/edit/${id}`);
+    },
+    [router]
+  );
 
-  const handleDeleteTask = (id: string) => {
-    deleteTodo(id);
-  };
-
-  const handleToggleComplete = (id: string) => {
-    toggleComplete(id);
-  };
-
-  const handleSearch = (e: React.FormEvent) => {
+  const handleSearch = useCallback((e: React.FormEvent) => {
     e.preventDefault();
-    filterTodos();
-  };
+  }, []);
+
+  // Only recompute this if filteredTodos changes
+  const todoElements = useMemo(() => {
+    return filteredTodos.map((todo) => (
+      <motion.div
+        key={todo.id}
+        layout
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
+      >
+        <TodoCard
+          todo={todo}
+          onEdit={handleEditTask}
+          onDelete={deleteTodo}
+          onToggleComplete={toggleComplete}
+        />
+      </motion.div>
+    ));
+  }, [filteredTodos, handleEditTask, deleteTodo, toggleComplete]);
+
+  // Empty state memo
+  const emptyState = useMemo(
+    () => (
+      <div className="col-span-full flex flex-col items-center justify-center py-10 text-center text-muted-foreground">
+        <Filter className="mb-2 h-12 w-12" />
+        <h3 className="mb-1 text-xl font-semibold">Tidak ada tugas</h3>
+        <p>
+          {searchQuery
+            ? "Tidak ada tugas yang cocok dengan kriteria pencarian."
+            : "Belum ada tugas. Klik tombol 'Tambah Tugas' untuk membuat tugas baru."}
+        </p>
+      </div>
+    ),
+    [searchQuery]
+  );
 
   return (
     <div className="container py-6">
@@ -129,36 +174,17 @@ export default function TasksPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredTodos.length > 0 ? (
-          filteredTodos.map((todo) => (
-            <motion.div
-              key={todo.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.3 }}
-            >
-              <TodoCard
-                todo={todo}
-                onEdit={handleEditTask}
-                onDelete={handleDeleteTask}
-                onToggleComplete={handleToggleComplete}
-              />
-            </motion.div>
-          ))
-        ) : (
-          <div className="col-span-full flex flex-col items-center justify-center py-10 text-center text-muted-foreground">
-            <Filter className="mb-2 h-12 w-12" />
-            <h3 className="mb-1 text-xl font-semibold">Tidak ada tugas</h3>
-            <p>
-              {searchQuery
-                ? "Tidak ada tugas yang cocok dengan kriteria pencarian."
-                : "Belum ada tugas. Klik tombol 'Tambah Tugas' untuk membuat tugas baru."}
-            </p>
-          </div>
-        )}
-      </div>
+      {isLoading ? (
+        <div className="flex justify-center items-center h-[calc(100vh-300px)]">
+          <Loader className="h-8 w-8" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <AnimatePresence>
+            {filteredTodos.length > 0 ? todoElements : emptyState}
+          </AnimatePresence>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,169 +1,242 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { PlusCircle, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { SearchBar } from "@/components/search-bar";
 import { TodoCard } from "@/components/todo-card";
 import { useTodo } from "@/contexts/todo-context";
-import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { TodoForm } from "@/components/todo-form";
-import { Todo } from "@/contexts/todo-context";
-import Link from "next/link";
+import { Todo, TodoCategory } from "@/lib/types";
+import { loadTodosByCategory } from "@/lib/server-actions";
+import { Loader } from "@/components/ui/loader";
+import { SearchBar } from "@/components/ui/search-bar";
 
-type CategoryParams = {
-  params: {
-    category: "kepemudaan" | "olahraga" | "pariwisata";
-  };
-};
-
-export default function CategoryPage({ params }: CategoryParams) {
-  const { category } = params;
+export default function CategoryPage() {
+  const params = useParams();
+  const category = params.category as TodoCategory;
   const {
-    todos,
-    deleteTodo,
+    addTodo,
     updateTodo,
+    deleteTodo,
     toggleComplete,
     getTodosByCategory,
     searchTodos,
-    addTodo,
   } = useTodo();
   const [searchQuery, setSearchQuery] = useState("");
+  const [categoryTodos, setCategoryTodos] = useState<Todo[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [editingTodo, setEditingTodo] = useState<Todo | null>(null);
+  const [selectedTodo, setSelectedTodo] = useState<Todo | null>(null);
+
+  useEffect(() => {
+    const loadData = async () => {
+      setIsLoading(true);
+      try {
+        const todos = await loadTodosByCategory(category);
+        setCategoryTodos(todos);
+      } catch (error) {
+        console.error("Error loading todos by category:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+  }, [category]);
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
-  };
 
-  const handleDelete = (id: string) => {
-    deleteTodo(id);
-  };
-
-  const handleEdit = (id: string) => {
-    const todo = todos.find((t) => t.id === id);
-    if (todo) {
-      setEditingTodo(todo);
-      setIsEditDialogOpen(true);
+    if (query.trim() === "") {
+      // If search is cleared, load all todos for this category
+      const todos = getTodosByCategory(category as TodoCategory) || [];
+      setCategoryTodos(todos);
+    } else {
+      // Otherwise filter based on search criteria
+      searchTodos(query).then((results) => {
+        // Filter by category on client side since searchTodos doesn't take category
+        const filteredResults = Array.isArray(results)
+          ? results.filter((todo) => todo.category === category)
+          : [];
+        setCategoryTodos(filteredResults);
+      });
     }
   };
 
-  const handleToggleComplete = (id: string) => {
-    toggleComplete(id);
-  };
-
-  const handleSubmitAdd = (todo: Omit<Todo, "id" | "createdAt">) => {
-    addTodo({
+  const handleAddTodo = async (todo: Omit<Todo, "id" | "createdAt">) => {
+    // Add optimistic update
+    const newTodo = {
       ...todo,
-      category: category,
-    });
+      id: `temp-${Date.now()}`,
+      category: category as TodoCategory,
+      completed: false,
+      createdAt: new Date().toISOString(),
+    } as Todo;
+
+    setCategoryTodos((prevTodos) => [...prevTodos, newTodo]);
+
+    // Actually add to database
+    try {
+      await addTodo({
+        ...todo,
+        category: category as TodoCategory,
+      });
+
+      // Refresh the list
+      const updatedTodos = getTodosByCategory(category as TodoCategory) || [];
+      setCategoryTodos(updatedTodos);
+    } catch (error) {
+      console.error("Error adding todo:", error);
+      // Remove optimistic update if failed
+      setCategoryTodos((prevTodos) =>
+        prevTodos.filter((t) => t.id !== newTodo.id)
+      );
+    }
+
     setIsAddDialogOpen(false);
   };
 
-  const handleSubmitEdit = (todo: Omit<Todo, "id" | "createdAt">) => {
-    if (editingTodo) {
-      updateTodo(editingTodo.id, todo);
-      setIsEditDialogOpen(false);
-      setEditingTodo(null);
+  const handleUpdateTodo = async (todo: Omit<Todo, "id" | "createdAt">) => {
+    if (!selectedTodo) return;
+
+    // Optimistic update
+    setCategoryTodos((prevTodos) =>
+      prevTodos.map((t) => (t.id === selectedTodo.id ? { ...t, ...todo } : t))
+    );
+
+    // Actually update in database
+    try {
+      await updateTodo(selectedTodo.id, todo);
+    } catch (error) {
+      console.error("Error updating todo:", error);
+      // Refresh from database if update failed
+      const refreshedTodos = getTodosByCategory(category as TodoCategory) || [];
+      setCategoryTodos(refreshedTodos);
+    }
+
+    setSelectedTodo(null);
+    setIsEditDialogOpen(false);
+  };
+
+  const handleDeleteTodo = async (id: string) => {
+    // Optimistic update
+    setCategoryTodos((prevTodos) => prevTodos.filter((todo) => todo.id !== id));
+
+    // Actually delete from database
+    try {
+      await deleteTodo(id);
+    } catch (error) {
+      console.error("Error deleting todo:", error);
+      // Refresh from database if delete failed
+      const refreshedTodos = getTodosByCategory(category as TodoCategory) || [];
+      setCategoryTodos(refreshedTodos);
     }
   };
 
-  // Get todos for the category and filter by search query if needed
-  let filteredTodos = getTodosByCategory(category);
+  const handleToggleCompleteTodo = async (id: string) => {
+    // First find the todo to get its current status
+    const todo = categoryTodos.find((t) => t.id === id);
+    if (!todo) return;
 
-  if (searchQuery) {
-    filteredTodos = searchTodos(searchQuery).filter(
-      (todo) => todo.category === category
+    // Optimistic update
+    setCategoryTodos((prevTodos) =>
+      prevTodos.map((t) =>
+        t.id === id ? { ...t, completed: !t.completed } : t
+      )
+    );
+
+    // Actually toggle in database
+    try {
+      await toggleComplete(id);
+    } catch (error) {
+      console.error("Error toggling todo completion:", error);
+      // Refresh from database if toggle failed
+      const refreshedTodos = getTodosByCategory(category as TodoCategory) || [];
+      setCategoryTodos(refreshedTodos);
+    }
+  };
+
+  const openEditDialog = (todo: Todo) => {
+    setSelectedTodo(todo);
+    setIsEditDialogOpen(true);
+  };
+
+  if (!category) {
+    return (
+      <div className="container mx-auto p-4">
+        <h1 className="text-2xl font-bold">Invalid Category</h1>
+      </div>
     );
   }
 
-  // Helper function to get category title
-  const getCategoryTitle = () => {
-    switch (category) {
-      case "kepemudaan":
-        return "Kepemudaan";
-      case "olahraga":
-        return "Olahraga";
-      case "pariwisata":
-        return "Pariwisata";
-      default:
-        return "Kategori";
-    }
-  };
+  const formattedCategory =
+    category.charAt(0).toUpperCase() + category.slice(1);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <Link
-            href="/tasks"
-            className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground mb-2"
-          >
-            <ArrowLeft className="mr-1 h-4 w-4" />
-            Kembali ke semua tugas
-          </Link>
-          <h1 className="text-3xl font-bold">Kategori: {getCategoryTitle()}</h1>
-          <p className="text-muted-foreground">
-            Kelola tugas berdasarkan kategori
+    <div className="container mx-auto p-4">
+      <h1 className="text-2xl font-bold mb-6">{formattedCategory} Tasks</h1>
+
+      <div className="flex justify-between items-center mb-6">
+        <div className="relative w-full max-w-sm">
+          <SearchBar onSearch={handleSearch} placeholder="Search tasks..." />
+        </div>
+        <Button onClick={() => setIsAddDialogOpen(true)} className="ml-4">
+          Add Task
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center items-center h-[calc(100vh-200px)]">
+          <Loader className="h-8 w-8" />
+        </div>
+      ) : categoryTodos.length === 0 ? (
+        <div className="text-center py-10">
+          <p className="text-gray-500 dark:text-gray-400">
+            {searchQuery.trim() !== ""
+              ? "No tasks matching your search"
+              : "No tasks in this category yet"}
           </p>
         </div>
-
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <PlusCircle className="h-4 w-4" />
-              Tambah Tugas {getCategoryTitle()}
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px] p-0">
-            <TodoForm
-              initialData={{ category }}
-              onSubmit={handleSubmitAdd}
-              onCancel={() => setIsAddDialogOpen(false)}
-            />
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      <div className="flex justify-between items-center">
-        <SearchBar onSearch={handleSearch} />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredTodos.length === 0 ? (
-          <div className="col-span-full text-center py-12">
-            <p className="text-muted-foreground">
-              Tidak ada tugas dalam kategori ini.
-            </p>
-          </div>
-        ) : (
-          filteredTodos.map((todo, index) => (
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {categoryTodos.map((todo) => (
             <motion.div
               key={todo.id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: index * 0.05 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.2 }}
             >
               <TodoCard
                 todo={todo}
-                onDelete={handleDelete}
-                onEdit={handleEdit}
-                onToggleComplete={handleToggleComplete}
+                onDelete={() => handleDeleteTodo(todo.id)}
+                onEdit={() => openEditDialog(todo)}
+                onToggleComplete={() => handleToggleCompleteTodo(todo.id)}
               />
             </motion.div>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
 
-      {/* Edit Dialog */}
+      <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+        <DialogContent className="sm:max-w-[500px] p-0">
+          <TodoForm
+            initialData={{ category: category as TodoCategory }}
+            onSubmit={handleAddTodo}
+            onCancel={() => setIsAddDialogOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="sm:max-w-[500px] p-0">
-          {editingTodo && (
+          {selectedTodo && (
             <TodoForm
-              initialData={editingTodo}
-              onSubmit={handleSubmitEdit}
+              initialData={selectedTodo}
+              onSubmit={handleUpdateTodo}
               onCancel={() => setIsEditDialogOpen(false)}
               isEditing
             />

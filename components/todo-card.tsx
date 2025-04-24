@@ -14,8 +14,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Todo } from "@/contexts/todo-context";
-import { useState } from "react";
+import { Todo } from "@/lib/types";
+import { useState, memo, useCallback } from "react";
 import { cn } from "@/lib/utils";
 
 interface TodoCardProps {
@@ -25,7 +25,8 @@ interface TodoCardProps {
   onToggleComplete: (id: string) => void;
 }
 
-export function TodoCard({
+// Using React.memo to prevent unnecessary re-renders
+export const TodoCard = memo(function TodoCard({
   todo,
   onDelete,
   onEdit,
@@ -33,7 +34,8 @@ export function TodoCard({
 }: TodoCardProps) {
   const [checked, setChecked] = useState(todo.completed);
 
-  const getCategoryIcon = (category: string) => {
+  // Memoize icon getter function
+  const getCategoryIcon = useCallback((category: string) => {
     switch (category) {
       case "kepemudaan":
         return <Users className="h-4 w-4" />;
@@ -44,9 +46,10 @@ export function TodoCard({
       default:
         return null;
     }
-  };
+  }, []);
 
-  const getCategoryColor = (category: string) => {
+  // Memoize color getter function
+  const getCategoryColor = useCallback((category: string) => {
     switch (category) {
       case "kepemudaan":
         return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300";
@@ -57,33 +60,43 @@ export function TodoCard({
       default:
         return "";
     }
-  };
+  }, []);
 
-  const handleCheckChange = () => {
-    setChecked(!checked);
+  // Optimize the check change handler
+  const handleCheckChange = useCallback(() => {
+    setChecked((prev) => !prev);
     onToggleComplete(todo.id);
-  };
+  }, [todo.id, onToggleComplete]);
+
+  // Optimize edit and delete handlers
+  const handleEdit = useCallback(() => onEdit(todo.id), [todo.id, onEdit]);
+  const handleDelete = useCallback(
+    () => onDelete(todo.id),
+    [todo.id, onDelete]
+  );
 
   // Format date for display
-  const formatDueDate = (dateString: string) => {
+  const formatDueDate = useCallback((dateString: string) => {
     try {
       const date = new Date(dateString);
       return format(date, "dd MMMM yyyy", { locale: id });
     } catch {
       return dateString;
     }
-  };
+  }, []);
 
+  // Use simpler animation for better performance
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.2 }}
       className="h-full"
+      layout
     >
       <Card
         className={cn(
-          "h-full transition-all duration-300 transform hover:shadow-lg rounded-2xl overflow-hidden flex flex-col",
+          "h-full transition-all duration-300 hover:shadow-lg rounded-2xl overflow-hidden flex flex-col",
           checked ? "bg-muted/40" : ""
         )}
       >
@@ -138,13 +151,13 @@ export function TodoCard({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => onDelete(todo.id)}
+            onClick={handleDelete}
             className="text-destructive hover:text-destructive/90 hover:bg-destructive/10"
           >
             <Trash2 className="h-4 w-4 mr-1" />
             <span className="text-xs">Hapus</span>
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => onEdit(todo.id)}>
+          <Button variant="ghost" size="sm" onClick={handleEdit}>
             <Edit className="h-4 w-4 mr-1" />
             <span className="text-xs">Edit</span>
           </Button>
@@ -152,4 +165,9 @@ export function TodoCard({
       </Card>
     </motion.div>
   );
+});
+
+// Add a skeleton loader for the TodoCard
+export function TodoCardSkeleton() {
+  return <div className="bg-muted/30 h-[180px] rounded-xl animate-pulse" />;
 }

@@ -1,12 +1,23 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, Award, Compass, CheckCircle, Clock } from "lucide-react";
 import { useTodo } from "@/contexts/todo-context";
+import { Loader } from "@/components/ui/loader";
 
 export function Dashboard() {
+  const [isLoading, setIsLoading] = useState(true);
   const { todos, getTodosByCategory } = useTodo();
+
+  useEffect(() => {
+    if (todos.length > 0 || isLoading) {
+      // Give a slight delay to show the loader
+      const timer = setTimeout(() => setIsLoading(false), 300);
+      return () => clearTimeout(timer);
+    }
+  }, [todos, isLoading]);
 
   const completedTodos = todos.filter((todo) => todo.completed);
   const pendingTodos = todos.filter((todo) => !todo.completed);
@@ -58,6 +69,14 @@ export function Dashboard() {
       color: "border-purple-500/20 bg-purple-500/5",
     },
   ];
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-[60vh]">
+        <Loader className="h-8 w-8" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
