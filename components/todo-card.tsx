@@ -64,6 +64,16 @@ export function TodoCard({
     onToggleComplete(todo.id);
   };
 
+  // Format date for display
+  const formatDueDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      return format(date, "dd MMMM yyyy", { locale: id });
+    } catch {
+      return dateString;
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -120,9 +130,7 @@ export function TodoCard({
           {todo.dueDate && (
             <div className="flex items-center text-xs text-muted-foreground mt-2">
               <Calendar className="h-3 w-3 mr-1" />
-              <span>
-                {format(todo.dueDate, "dd MMMM yyyy", { locale: id })}
-              </span>
+              <span>{formatDueDate(todo.dueDate)}</span>
             </div>
           )}
         </CardContent>

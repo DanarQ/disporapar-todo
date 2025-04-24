@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { Sidebar } from "@/components/ui/sidebar";
 import { TodoProvider } from "@/contexts/todo-context";
+import { runMigrations } from "@/lib/db/server";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -12,11 +13,18 @@ export const metadata: Metadata = {
     "Aplikasi Todo List untuk Dinas Kepemudaan, Olahraga, dan Pariwisata",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // Run migrations
+  try {
+    await runMigrations();
+  } catch (error) {
+    console.error("Failed to run migrations:", error);
+  }
+
   return (
     <html lang="id">
       <body className={inter.className}>

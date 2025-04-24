@@ -1,18 +1,8 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
-
-type Category = "kepemudaan" | "olahraga" | "pariwisata";
-
-export interface Todo {
-  id: string;
-  title: string;
-  description: string;
-  completed: boolean;
-  category: Category;
-  createdAt: Date;
-  dueDate?: Date;
-}
+import * as ServerActions from "@/lib/server-actions";
+import { Todo, TodoCategory } from "@/lib/types";
 
 interface TodoContextType {
   todos: Todo[];
@@ -20,117 +10,100 @@ interface TodoContextType {
   updateTodo: (id: string, todo: Partial<Todo>) => void;
   deleteTodo: (id: string) => void;
   toggleComplete: (id: string) => void;
-  getTodosByCategory: (category: Category) => Todo[];
-  searchTodos: (query: string) => Todo[];
+  getTodosByCategory: (category: TodoCategory) => Todo[];
+  searchTodos: (query: string) => Promise<Todo[]>;
+  loading: boolean;
+  refresh: () => Promise<void>;
 }
 
 const TodoContext = createContext<TodoContextType | undefined>(undefined);
 
-const initialTodos: Todo[] = [
-  {
-    id: "1",
-    title: "Rapat koordinasi program kepemudaan",
-    description:
-      "Rapat dengan Kepala Bidang Kepemudaan tentang program tahun 2025",
-    completed: false,
-    category: "kepemudaan",
-    createdAt: new Date("2025-04-20"),
-    dueDate: new Date("2025-04-27"),
-  },
-  {
-    id: "2",
-    title: "Persiapan lomba olahraga tingkat provinsi",
-    description:
-      "Koordinasi dengan pelatih dan pemilihan atlet untuk lomba bulan depan",
-    completed: true,
-    category: "olahraga",
-    createdAt: new Date("2025-04-15"),
-    dueDate: new Date("2025-04-30"),
-  },
-  {
-    id: "3",
-    title: "Penyusunan proposal festival budaya",
-    description: "Menyusun proposal dan anggaran untuk festival budaya tahunan",
-    completed: false,
-    category: "pariwisata",
-    createdAt: new Date("2025-04-18"),
-    dueDate: new Date("2025-04-25"),
-  },
-  {
-    id: "4",
-    title: "Evaluasi program pelatihan pemuda",
-    description: "Mengevaluasi hasil pelatihan kepemimpinan pemuda tahun 2024",
-    completed: false,
-    category: "kepemudaan",
-    createdAt: new Date("2025-04-10"),
-    dueDate: new Date("2025-04-24"),
-  },
-  {
-    id: "5",
-    title: "Survei lokasi destinasi wisata baru",
-    description:
-      "Melakukan survei dan penilaian potensi wisata di daerah utara",
-    completed: false,
-    category: "pariwisata",
-    createdAt: new Date("2025-04-12"),
-    dueDate: new Date("2025-05-10"),
-  },
-];
-
 export function TodoProvider({ children }: { children: React.ReactNode }) {
-  const [todos, setTodos] = useState<Todo[]>([]);
+  const [allTodos, setAllTodos] = useState<Todo[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Load initial data
+  // Load todos from database when component mounts
   useEffect(() => {
-    setTodos(initialTodos);
+    refresh();
   }, []);
 
-  const addTodo = (todo: Omit<Todo, "id" | "createdAt">) => {
-    const newTodo: Todo = {
-      ...todo,
-      id: Date.now().toString(),
-      createdAt: new Date(),
-    };
-    setTodos((prev) => [...prev, newTodo]);
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      const todos = await ServerActions.loadTodos();
+      setAllTodos(todos);
+    } catch (error) {
+      console.error("Error loading todos:", error);
+      setAllTodos([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const updateTodo = (id: string, todo: Partial<Todo>) => {
-    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, ...todo } : t)));
+  const addTodo = async (todo: Omit<Todo, "id" | "createdAt">) => {
+    try {
+      await ServerActions.addTodo(todo);
+      refresh();
+    } catch (error) {
+      console.error("Error adding todo:", error);
+    }
   };
 
-  const deleteTodo = (id: string) => {
-    setTodos((prev) => prev.filter((t) => t.id !== id));
+  const updateTodo = async (id: string, todo: Partial<Todo>) => {
+    try {
+      await ServerActions.updateTodo(id, todo);
+      refresh();
+    } catch (error) {
+      console.error("Error updating todo:", error);
+    }
   };
 
-  const toggleComplete = (id: string) => {
-    setTodos((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, completed: !t.completed } : t))
-    );
+  const deleteTodo = async (id: string) => {
+    try {
+      await ServerActions.deleteTodo(id);
+      refresh();
+    } catch (error) {
+      console.error("Error deleting todo:", error);
+    }
   };
 
-  const getTodosByCategory = (category: Category) => {
-    return todos.filter((todo) => todo.category === category);
+  const toggleComplete = async (id: string) => {
+    try {
+      const todo = allTodos.find((t) => t.id === id);
+      if (todo) {
+        await ServerActions.toggleComplete(id, todo.completed);
+        refresh();
+      }
+    } catch (error) {
+      console.error("Error toggling todo completion:", error);
+    }
   };
 
-  const searchTodos = (query: string) => {
-    const lowerQuery = query.toLowerCase();
-    return todos.filter(
-      (todo) =>
-        todo.title.toLowerCase().includes(lowerQuery) ||
-        todo.description.toLowerCase().includes(lowerQuery)
-    );
+  const getTodosByCategory = (category: TodoCategory) => {
+    return allTodos.filter((todo) => todo.category === category);
+  };
+
+  const searchTodos = async (query: string) => {
+    try {
+      return await ServerActions.searchTodos(query);
+    } catch (error) {
+      console.error("Error searching todos:", error);
+      return [];
+    }
   };
 
   return (
     <TodoContext.Provider
       value={{
-        todos,
+        todos: allTodos,
         addTodo,
         updateTodo,
         deleteTodo,
         toggleComplete,
         getTodosByCategory,
         searchTodos,
+        loading,
+        refresh,
       }}
     >
       {children}

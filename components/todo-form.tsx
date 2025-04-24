@@ -53,7 +53,7 @@ export function TodoForm({
       description,
       completed,
       category,
-      dueDate: dueDate ? new Date(dueDate) : undefined,
+      dueDate: dueDate ? dueDate : undefined,
     });
   };
 

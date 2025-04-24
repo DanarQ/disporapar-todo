@@ -2,15 +2,14 @@
 
 import { useRouter } from "next/navigation";
 import { TodoForm } from "@/components/todo-form";
-import { useTodo } from "@/contexts/todo-context";
-import { Todo } from "@/contexts/todo-context";
+import { useTodo, Todo } from "@/contexts/todo-context";
 
 export default function NewTaskPage() {
   const router = useRouter();
   const { addTodo } = useTodo();
 
-  const handleSubmit = (todo: Omit<Todo, "id" | "createdAt">) => {
-    addTodo(todo);
+  const handleSubmit = (data: Omit<Todo, "id" | "createdAt">) => {
+    addTodo(data);
     router.push("/tasks");
   };
 
@@ -19,8 +18,8 @@ export default function NewTaskPage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto py-8">
-      <h1 className="text-3xl font-bold mb-8 text-center">Tambah Tugas Baru</h1>
+    <div className="container max-w-2xl py-6">
+      <h1 className="text-2xl font-bold mb-6">Tambah Tugas Baru</h1>
       <TodoForm onSubmit={handleSubmit} onCancel={handleCancel} />
     </div>
   );
