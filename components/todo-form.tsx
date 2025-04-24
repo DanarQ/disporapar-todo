@@ -15,9 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Users, Award, Compass } from "lucide-react";
-import { Todo } from "@/contexts/todo-context";
-
-type TodoCategory = "kepemudaan" | "olahraga" | "pariwisata";
+import { Todo, TodoCategory } from "@/lib/types";
 
 interface TodoFormProps {
   initialData?: Partial<Todo>;
